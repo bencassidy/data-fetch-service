@@ -1,6 +1,10 @@
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { Job } from './job.model';
 
@@ -10,7 +14,7 @@ export class JobsService {
   private jobs: object = {};
   private urls: object = {};
 
-  async createJob(url: string) {
+  async createJob(url: string): Promise<Job> {
     const now = Date.now();
     const id = uuid();
 
@@ -23,7 +27,6 @@ export class JobsService {
     const job: Job = {
       id,
       url,
-      status: 'not started',
       createdAt: now,
       updatedAt: now,
     };
@@ -39,7 +42,7 @@ export class JobsService {
   async getJobStatus(id): Promise<string> {
     const job = await this.jobQueue.getJob(id);
     if (!job) {
-      return `Job ${id} does not exist`;
+      throw new NotFoundException(`Job ${id} not found`);
     }
 
     if (!job.finishedOn) {
@@ -50,11 +53,13 @@ export class JobsService {
   }
 
   getJobResults(id): object {
-    return this.jobs[id].data;
+    if (this.jobs[id]) return this.jobs[id].data;
+
+    throw new NotFoundException(`Job ${id} not found`);
   }
 
-  async deleteJob(id: string) {
-    const response = await this.jobQueue.removeJobs(id);
+  async deleteJob(id: string): Promise<string> {
+    await this.jobQueue.removeJobs(id);
     delete this.jobs[id];
     return `Job ${id} has been deleted`;
   }
@@ -63,7 +68,7 @@ export class JobsService {
     this.jobs[id].data = data;
   }
 
-  isRecentUrl(url, now) {
+  isRecentUrl(url, now): boolean {
     const hourInMilliseconds = 3600000;
     const lastSubmittedTime = this.urls[url];
     if (lastSubmittedTime && now - lastSubmittedTime <= hourInMilliseconds) {
